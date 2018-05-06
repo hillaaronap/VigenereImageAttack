@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+	<html>
+		<head>
+			<!--<meta charset="charset=ISO-8859-1">-->
+			
+			<title>Attack Image</title>
+			<script src="./js/dat.gui.min.js"></script>
+			<script src="./js/histogram.js"></script>
+			  <!--[if lt IE 9]>
+				<script src="http://html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+				<![endif]-->
+			<link rel="stylesheet" href="./css/attack_image.css">
+		</head>
+		<body>
+		 <div style="width:590px; max-width:590px;" id="main">
+			<canvas id="canvas" width = 585px; height= 300px; style="background-color: rgba(158, 167, 184, 0.2)"></canvas>
+		</div>
+		<div style="display:none">
+		<input type="file" id="encFile" name="encFiles[]" />
+		<output id="encList"></output>
+		<input type="file" id="refFiles" name="refFiles[]" multiple />
+		<output id="refList"></output>
+		<input type="button" id="meh"></input>
+		</div>
+		<script>
+		//const ENCODING = 'utf-8';
+		window.onload = function(){
+			// Check for the various File API support.
+		if (window.File && window.FileReader && window.FileList && window.Blob) {
+			//All the File APIs are supported.
+			console.log("supported");
+		} else {
+			alert('The File APIs are not fully supported in this browser.');
+		}
+			var canvas  = document.getElementById('canvas'),
+				context  = canvas.getContext('2d');
+			var img;
+			var objects=[];
+			var keyNum,recom,fds;
+			var guiParams = {
+				encFile:function(){document.getElementById('encFile').click();},
+				refFiles:function(){document.getElementById('refFiles').click();},
+				decKey:'',
+				maxKey:60,
+				keyLength:0,
+				decrypt:function(){decrypt()},
+				key:'',
+				rec:''
+			}
+			var data = new Uint8Array();
+			Uint8Array.prototype.concat = function(a){
+					var b = new Uint8Array(this.length + a.length);
+					b.set(this);
+					b.set(a, this.length);
+					return b;
+			};
+			var gui = new dat.GUI();
+			gui.add(guiParams,'encFile').name("select file");
+			gui.add(guiParams,'refFiles').name("select reference files");
+			var maxKey=gui.add(guiParams,'maxKey', 1, 150).name("max key length");
+			var keyLength=gui.add(guiParams,'keyLength').name("key length");
+			//var decFolder=gui.addFolder('decrypt');
+				gui.add(guiParams,'decKey').name("key");
+				gui.add(guiParams,'decrypt').name("decrypt");
+			initialize();
+			//render();
+				
+				
+			/*******FUNCTIONS**************/
+			function resizeFunction(){
+				console.log("resizeFunction");
+				canvas.width = window.innerWidth;
+				canvas.height=window.innerHeight;
+				render();
+			}
+			function encFile(event){
+				//load encrypted image
+				var time;
+				var files = event.target.files;
+				var fRead= new FileReader();
+				
+				var fileHist;
+				fRead.onloadend = function(event){
+					
+					if(event.target.readyState ==FileReader.DONE){
+						var t=new Date().getTime();
+						console.log("file reader loaded", t-time);
+						//create hist of file
+						fileHist = new histogram(new Uint8Array(fRead.result), 256);
+						fds=fRead;
+						fileHist.draw(context,[canvas.offsetLeft, canvas.offsetTop], [canvas.width,canvas.height/4]);
+						objects[0]=fileHist;
+						IoC();
+						//render();
+					}
+					
+				};
+				time = new Date().getTime();
+				fRead.readAsArrayBuffer(files[0]);
+				//fRead.readAsBinaryString(files[0]);
+				
+			}
+			function refFiles(event){
+				//load reference images
+				var time;
+				var files = event.target.files;
+				var fRead =[];
+				var Hist,n=0;
+				
+				data = new Uint8Array();
+				for(var i=0; i< files.length; i++){
+					fRead[i]= new FileReader();					
+					fRead[i].onloadend = function(evt){
+						if(evt.target.readyState ==FileReader.DONE){
+							var t=new Date().getTime();
+							data=data.concat(new Uint8Array(evt.target.result));
+							//console.log(fRead.indexOf(evt.target), t-time, data.length,new Uint8Array(evt.target.result),data);
+							n++;
+							if(n==files.length){
+								document.getElementById("meh").click();
+							}
+							
+						}
+					};
+					time = new Date().getTime();
+					fRead[i].readAsArrayBuffer(files[i]);
+				}
+				//create hist of average
+			}
+			function decrypt(){
+				//save decrypted bites to jpg
+				var fr = objects[0].data;
+				var dec = [];
+				var k=[];
+				var charArray=[];
+				if(guiParams.decKey.length>0){
+					console.log("Decrypt");
+					for(var i=0; i<guiParams.decKey.length;i++){
+						k[i] = guiParams.decKey.charCodeAt(i);
+					}
+					for(var j=0; j < fr.length; j++){
+						ji = (j)%guiParams.decKey.length;
+						dec[j] = (fr[j]-k[ji])%256;
+						dec[j] = dec[j] < 0 ? dec[j]+256 : dec[j];
+					}	
+				}
+				else{
+						dec = fr;
+				}
+				var temp = new Uint8Array(fr.length);
+				var tempCats='';
+				for(var j=0; j < fr.length; j++){
+					charArray[j] = String.fromCharCode(dec[j]);
+					tempCats=tempCats + charArray[j];
+				}
+
+				var imgsrc =('data:image/jpeg;base64,'+window.btoa(tempCats));
+				if(img){
+					document.getElementById("main").removeChild(img);
+				}
+				img = new Image();
+				img.src = imgsrc;
+				var aspect =img.naturalHeight/ img.naturalWidth;
+				img.width=window.innerWidth;
+				img.height=img.width*aspect;
+				
+				document.getElementById("main").insertBefore(img,canvas);
+					/*var span = document.createElement('span');
+					span.innerHTML = ['<img src="',event.target.result,'"/>'].join('');
+					document.getElementById("main").insertBefore(span, null);
+					console.log(span);*/					
+			}
+			function initialize(){
+				console.log("initializing");
+				initializeListeners();
+				resizeFunction();
+				
+			}
+			function reset(){
+			}
+			function initializeListeners(){
+				window.onresize=function(){resizeFunction()};
+				maxKey.onChange(function(value){
+					//console.log("maxKey listener");
+					IoC();
+				});
+				document.getElementById('encFile').addEventListener('change', encFile, false);
+				document.getElementById('refFiles').addEventListener('change', refFiles, false);
+				document.getElementById("meh").addEventListener('click',function(){
+					var fileHist;
+					//console.log("alldone",data.length);
+					fileHist = new histogram(data,256);
+					fileHist.color="#0000ff";
+					fileHist.draw(context,[0,(3*canvas.height)/4], [canvas.width, canvas.height/4-20]);
+					objects[2]=fileHist;
+					//render();
+				},false);
+				keyLength.onFinishChange(function(value){
+					//create hist for each letter
+					var l= value, o=objects[0].data, arr=[],num=[],mode=0;
+					if(objects[2]){
+						mode = objects[2].bins.indexOf(objects[2].max);
+					}
+					console.log("mode", mode);
+					for(var j=0;j<l;j++){arr[j]=[];}
+					for(var i=0; i< o.length; i++){
+						arr[i%l].push(o[i]); 
+					}
+					for(var j=0; j<l; j++){
+						objects[3+j]=new histogram(arr[j],256);
+						objects[3+j].color = "#5500ff";
+						objects[3+j].draw(context,[0, objects[1].params[1][1]+objects[1].params[2][1]], [canvas.width, canvas.height/4]);
+						num[j]=String(j+1);
+					}
+					//debugger;
+					if(keyNum){
+						gui.remove(keyNum);
+					}
+					if(recom){
+						gui.remove(recom);
+					}
+					keyNum = gui.add(guiParams,'key',num).name("view character").listen();
+					guiParams.rec = '';
+				//	debugger;
+					for(var i=0; i<l; i++){
+						guiParams.rec=guiParams.rec.concat(String.fromCharCode(objects[3+i].bins.indexOf(objects[3+i].max)-mode));
+					}
+					//debugger;
+					recom=gui.add(guiParams,'rec').name("recommended").listen();
+					keyNum.onChange(function(value){
+						objects[2+Number(value)].redraw();
+					});
+					
+					
+					//debugger;
+					guiParams.key=l;
+				});
+			}
+			function IoC(){
+				var e=objects[0].data;
+				var fileHist;
+				var h=[];
+				for(var s=0; s<guiParams.maxKey; s++){
+					h[s]=0;
+					for(var i=0; i< e.length; i++){
+						if(e[i] == e[i+s+1]){
+							h[s]++;
+						}
+					}
+				}
+				fileHist=new histogram(h,guiParams.maxKey,"plot");
+				//console.log(h,guiParams.maxKey);
+				fileHist.color="#00ff00";
+				fileHist.draw(context, [objects[0].params[1][0], objects[0].params[1][1]+objects[0].params[2][1]  ], [canvas.width, canvas.height/4]);
+				objects[1]=fileHist;
+				//render();
+				
+			}
+			function render(){
+				console.log("render");
+				context.clearRect(0,0,canvas.width,canvas.height);
+				for(var i=0; i<objects.length; i++){
+					if(objects[i]){
+					objects[i].params[2]=[canvas.width,canvas.height/4];
+					objects[i].redraw();
+					console.log("redraw");
+					}
+				}
+				
+			};
+				
+		}	
+			</script>
+		</body>
+	</html>
